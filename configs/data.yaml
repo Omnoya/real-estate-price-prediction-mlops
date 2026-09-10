@@ -14,6 +14,9 @@ dvf:
   read_timeout_seconds: 60
   chunk_size_bytes: 1048576
   max_attempts: 3
+  normalization:
+    output_directory: data/interim/dvf/normalized
+    batch_size: 10000
   resources:
     2021: "https://www.data.gouv.fr/api/1/datasets/r/947677ab-ad21-48f4-a9ac-ad217c99cf39"
     2022: "https://www.data.gouv.fr/api/1/datasets/r/be6e092d-292a-4568-90bf-4254a261ff3b"
