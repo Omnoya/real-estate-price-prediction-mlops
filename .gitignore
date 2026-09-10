@@ -1,0 +1,57 @@
+# Environnements Python
+.venv/
+venv/
+env/
+ENV/
+.python-version
+
+# Caches et sorties Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.ipynb_checkpoints/
+.cache/
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
+build/
+dist/
+*.egg-info/
+
+# Secrets et sessions
+.env
+.env.*
+session.json
+project.db
+
+# Données complètes
+/data/raw/
+/data/interim/
+/data/processed/
+
+# Modèles et artefacts générés
+/models/
+/artifacts/
+*.pkl
+*.joblib
+
+# MLflow local
+mlruns/
+mlartifacts/
+mlflow.db
+
+# IDE et OS
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*~
+
+# Petites fixtures de test versionnables
+!tests/fixtures/
+!tests/fixtures/**

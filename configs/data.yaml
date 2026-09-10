@@ -1,0 +1,5 @@
+# Chemins relatifs à la racine du projet.
+paths:
+  raw: data/raw
+  interim: data/interim
+  processed: data/processed
