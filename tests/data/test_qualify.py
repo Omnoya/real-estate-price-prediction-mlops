@@ -215,18 +215,49 @@ def test_existing_clean_functions_receive_complete_mutations(
     assert built == [(["2025-1"], 2)]
 
 
-def test_input_ids_need_no_ordinal_format_and_row_numbers_may_have_gaps(
+def test_sequential_ids_allow_surrounding_whitespace_and_row_number_gaps(
     tmp_path: Path, config: QualificationConfig,
 ) -> None:
     write_input(tmp_path, config, [
-        row(id_mutation=" mutation A ", source_row_number=10),
-        row(**(ANNEX | {"id_mutation": "mutation A", "source_row_number": 20})),
-        row(id_mutation="mutation B", source_row_number=50),
+        row(id_mutation=" 2025-1 ", source_row_number=10),
+        row(**(ANNEX | {"id_mutation": "2025-1", "source_row_number": 20})),
+        row(id_mutation="2025-2", source_row_number=50),
     ])
     result = qualify_dvf_year(2025, config, tmp_path)
     observations = pq.read_table(result.path).to_pylist()
-    assert [item["id_mutation"] for item in observations] == ["mutation A", "mutation B"]
+    assert [item["id_mutation"] for item in observations] == ["2025-1", "2025-2"]
     assert result.report.mutations_seen == 2
+
+
+@pytest.mark.parametrize("batch_size", [1, 2, 20])
+@pytest.mark.parametrize(
+    "identifiers",
+    [
+        pytest.param(["2025-1"], id="first-id-is-one"),
+        pytest.param(["2025-1", "2025-2"], id="consecutive-identifiers"),
+        pytest.param(["2025-1", "2025-1"], id="same-id-on-several-rows"),
+        pytest.param(["2025-1", "2025-1", "2025-2", "2025-2"],
+                     id="contiguous-groups-across-batches"),
+    ],
+)
+def test_sequential_identifier_integrity_accepts_normalized_groups(
+    tmp_path: Path, config: QualificationConfig, batch_size: int,
+    identifiers: list[str],
+) -> None:
+    rows = numbered_rows([
+        {"id_mutation": identifier}
+        | (ANNEX if index > 0 and identifier == identifiers[index - 1] else {})
+        for index, identifier in enumerate(identifiers)
+    ])
+    write_input(tmp_path, config, rows)
+    result = qualify_dvf_year(2025, replace(config, batch_size=batch_size), tmp_path)
+    observations = pq.read_table(result.path).to_pylist()
+    expected_ids = list(dict.fromkeys(identifiers))
+    assert [item["id_mutation"] for item in observations] == expected_ids
+    assert result.report.mutations_seen == len(expected_ids)
+    assert result.report.mutations_admissible == len(expected_ids)
+    assert result.report.mutations_rejected == 0
+    assert sum(item["source_row_count"] for item in observations) == len(rows)
 
 
 @pytest.mark.parametrize(
@@ -351,6 +382,64 @@ def test_multiple_rejections_are_aggregated_once_per_mutation(
     assert payload["rejection_counts"]["not_a_sale"] == 1
 
 
+@pytest.mark.parametrize("batch_size", [1, 3, 50])
+def test_mixed_output_and_all_report_counts_match_clean_exactly(
+    tmp_path: Path, config: QualificationConfig, batch_size: int,
+) -> None:
+    """Compare orchestration to the unchanged contract, including output order."""
+    groups = [
+        [ANNEX | {"nom_commune": "ANNEXE FICTIVE"}, {}],
+        [{"nature_mutation": "Echange", "id_parcelle": "", "code_type_local": None}],
+        [{"code_type_local": 2, "type_local": "Appartement", "valeur_fonciere": 0.0,
+          "nombre_pieces_principales": None, "nombre_lots": None,
+          "surface_terrain": None}],
+        [{}, {}],
+        [{}, ANNEX | {"code_type_local": None}],
+        [{"surface_reelle_bati": 0.0}],
+        [{"valeur_fonciere": -1.0, "type_local": "Dépendance"}],
+    ]
+    rows = []
+    expected_observations = []
+    expected_rejections = dict.fromkeys(ExclusionReason, 0)
+    for ordinal, group in enumerate(groups, start=1):
+        mutation = [
+            row(**(change | {
+                "id_mutation": f"2025-{ordinal}",
+                "source_row_number": len(rows) + offset,
+            }))
+            for offset, change in enumerate(group, start=1)
+        ]
+        rows.extend(mutation)
+        frame = pd.DataFrame(
+            [source | {"longitude": None, "latitude": None} for source in mutation],
+            dtype=object,
+        )
+        decision = qualify_mutation(frame)
+        if decision.admissible:
+            observation = build_observation(frame)
+            assert observation is not None
+            residential = next(source for source in mutation
+                               if source["code_type_local"] in (1, 2))
+            expected_observations.append(observation | {
+                name: residential[name]
+                for name in ("source_year", "nom_commune", "nombre_lots", "surface_terrain")
+            })
+        else:
+            expected_rejections[decision.exclusion_reason] += 1
+
+    write_input(tmp_path, config, rows)
+    result = qualify_dvf_year(2025, replace(config, batch_size=batch_size), tmp_path)
+
+    table = pq.read_table(result.path)
+    assert table.schema.equals(QUALIFIED_SCHEMA)
+    assert table.to_pylist() == expected_observations
+    assert result.report.mutations_seen == len(groups)
+    assert result.report.mutations_admissible == len(expected_observations)
+    assert result.report.mutations_rejected == sum(expected_rejections.values())
+    assert result.report.retention_rate == len(expected_observations) / len(groups)
+    assert result.report.rejection_counts == expected_rejections
+
+
 def test_empty_input_creates_valid_empty_output_and_zero_counters(
     tmp_path: Path, config: QualificationConfig,
 ) -> None:
@@ -379,6 +468,25 @@ def test_empty_input_creates_valid_empty_output_and_zero_counters(
         pytest.param([{"id_mutation": ""}], id="empty-mutation-id"),
         pytest.param([{"id_mutation": "  "}], id="blank-mutation-id"),
         pytest.param([{"id_mutation": None}], id="missing-mutation-id"),
+        pytest.param([{"id_mutation": "2025-2"}], id="first-id-is-not-one"),
+        pytest.param([{}, {"id_mutation": "2025-3"}], id="skipped-ordinal"),
+        pytest.param([{"id_mutation": "2025-2"}, {"id_mutation": "2025-1"}],
+                     id="decreasing-identifiers-with-invalid-first-id"),
+        pytest.param([{}, {"id_mutation": "2025-2"}, {"id_mutation": "2025-0"}],
+                     id="change-to-lower-ordinal"),
+        pytest.param([{"id_mutation": "2024-1"}], id="wrong-year-in-first-id"),
+        pytest.param([{}, {"id_mutation": "2024-2"}], id="wrong-year-in-later-id"),
+        pytest.param([{"id_mutation": "mutation A"}], id="arbitrary-id"),
+        pytest.param([{"id_mutation": "2025"}], id="missing-ordinal"),
+        pytest.param([{"id_mutation": "2025-0"}], id="zero-ordinal"),
+        pytest.param([{"id_mutation": "2025-01"}], id="leading-zero-ordinal"),
+        pytest.param([{}, {"id_mutation": "2025-02"}], id="later-leading-zero-ordinal"),
+        pytest.param([{"id_mutation": "2025--1"}], id="negative-ordinal"),
+        pytest.param([{"id_mutation": "2025-+1"}], id="signed-ordinal"),
+        pytest.param([{"id_mutation": "2025-1.0"}], id="decimal-ordinal"),
+        pytest.param([{"id_mutation": "2025-one"}], id="nonnumeric-ordinal"),
+        pytest.param([{"id_mutation": "2025- 1"}], id="inner-whitespace"),
+        pytest.param([{"id_mutation": "2025-١"}], id="non-ascii-ordinal"),
         pytest.param([{}, {"id_mutation": "2025-2"}, {"id_mutation": "2025-1"}],
                      id="non-contiguous-id"),
         pytest.param([{}, {"id_mutation": "2025-2", "nature_mutation": "Echange"},

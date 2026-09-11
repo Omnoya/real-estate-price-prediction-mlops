@@ -89,15 +89,44 @@ qualifiée après la fin de lecture. Un batch de sortie est écrit progressiveme
 La mémoire consacrée aux lignes dépend des tailles des batches et de la plus
 grande mutation, pas du nombre total de lignes de l'année.
 
-Un identifiant déjà fermé ne peut pas réapparaître plus tard. Pour vérifier cette
-propriété sans garder tous les identifiants en mémoire, un index SQLite temporaire
-local conserve les identifiants rencontrés avec un cache borné. Cet index technique
-est supprimé en fin de traitement, y compris en cas d'erreur. Il ne contient pas
-de dataset de lignes rejetées.
+Le contrôle des identifiants repose sur l'invariant produit par `normalize.py` :
+le premier groupe porte `YYYY-1` et chaque nouveau groupe porte exactement le
+numéro précédent augmenté de un, pour l'année demandée. Le même identifiant peut
+occuper plusieurs lignes et traverser plusieurs batches. Les espaces extérieurs
+sont retirés comme dans l'adaptateur initial. Les sauts, retours, réapparitions,
+années incorrectes et formats non conformes provoquent une erreur d'intégrité.
+Ce contrôle utilise uniquement l'identifiant courant et un compteur : sa mémoire
+est constante, sans index SQLite ni collection des identifiants déjà rencontrés.
+Il exige un fichier normalisé complet ; un extrait commençant à `YYYY-2` est refusé.
+
+Chaque batch Arrow est converti par colonnes, puis parcouru sous forme de tuples,
+sans dictionnaire par ligne. Les coordonnées `None` sont fournies directement au
+constructeur de la DataFrame de chaque mutation. `clean.qualify_mutation` et
+`clean.build_observation` restent appelées sans modification ; la seconde conserve
+sa propre vérification d'admission. Les observations restent mises en tampon
+avant écriture, dans l'ordre des mutations admissibles. Ces changements réduisent
+des allocations et suppriment l'index disque ; le gain de temps sur l'année réelle
+reste à mesurer.
 
 Une erreur d'intégrité interrompt l'exécution ; elle n'est pas comptée comme un
 rejet métier. Les validations de lignes sont progressives et doivent toutes
 réussir avant la publication du fichier final.
+
+## Comparaison logique de deux sorties
+
+`real_estate.data.compare.compare_qualified_parquets` compare deux fichiers
+existants par batches de taille bornée, sans les modifier. Elle retourne un
+booléen et vérifie le schéma (noms, ordre, types et nullabilité), le nombre de
+lignes et toutes les valeurs dans leur ordre. Elle accepte des découpages en
+groupes de lignes différents ; compression et métadonnées descriptives ne font
+pas partie de l'égalité logique.
+
+Les nulls, booléens, entiers, chaînes et floats sont comparés sans tolérance
+numérique. Deux NaN à la même position sont considérés égaux, mais distincts d'un
+null ; les zéros signés sont égaux. Les erreurs de lecture sont propagées. Cette
+comparaison ne se fonde pas sur le hash binaire des Parquet et ne relance aucune
+qualification. Les compteurs d'exécution doivent être comparés séparément : ils
+ne sont pas contenus dans les lignes du Parquet qualifié.
 
 ## Rejets et rapport d'exécution
 

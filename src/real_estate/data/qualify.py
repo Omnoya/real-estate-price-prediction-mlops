@@ -10,11 +10,10 @@ from __future__ import annotations
 import argparse
 import json
 import os
-import sqlite3
 import tempfile
 from collections.abc import Iterator
-from contextlib import closing, contextmanager
 from dataclasses import dataclass, field
+from itertools import repeat
 from pathlib import Path
 
 import pandas as pd
@@ -33,6 +32,17 @@ from real_estate.data.validate import (
 REQUIRED_INPUT_COLUMNS = tuple(
     column for column in REQUIRED_COLUMNS if column not in {"longitude", "latitude"}
 ) + ("source_year", "source_row_number", "nom_commune", "nombre_lots", "surface_terrain")
+
+# Fixed tuple positions avoid allocating a dictionary for every source row.
+_MUTATION_COLUMNS = (*REQUIRED_INPUT_COLUMNS, "longitude", "latitude")
+_YEAR_INDEX = _MUTATION_COLUMNS.index("source_year")
+_ROW_NUMBER_INDEX = _MUTATION_COLUMNS.index("source_row_number")
+_ID_INDEX = _MUTATION_COLUMNS.index("id_mutation")
+_LOCAL_CODE_INDEX = _MUTATION_COLUMNS.index("code_type_local")
+_RESIDENTIAL_METADATA = tuple(
+    (column, _MUTATION_COLUMNS.index(column))
+    for column in ("source_year", "nom_commune", "nombre_lots", "surface_terrain")
+)
 
 QUALIFIED_SCHEMA = pa.schema([
     pa.field("source_year", pa.int32(), nullable=False),
@@ -171,55 +181,49 @@ def _open_normalized(path: Path) -> pq.ParquetFile:
         raise InputIntegrityError("Cannot read the normalized DVF Parquet.") from error
 
 
-@contextmanager
-def _mutation_index(parent: Path) -> Iterator[sqlite3.Connection]:
-    """Track encountered IDs on disk with a 1 MiB cache, then discard the index."""
-    with (
-        tempfile.TemporaryDirectory(dir=parent, prefix=".dvf-index-", suffix=".part") as workspace,
-        closing(sqlite3.connect(Path(workspace) / "mutation_ids.sqlite")) as connection,
-    ):
-        connection.execute("PRAGMA journal_mode = OFF")
-        connection.execute("PRAGMA synchronous = OFF")
-        connection.execute("PRAGMA cache_size = -1024")
-        connection.execute("PRAGMA mmap_size = 0")
-        connection.execute("PRAGMA temp_store = FILE")
-        connection.execute("CREATE TABLE mutation_ids (id TEXT PRIMARY KEY) WITHOUT ROWID")
-        with connection:
-            yield connection
-
-
-def _validate_row_identity(row: dict[str, object], year: int, previous_number: int) -> int:
+def _validate_row_identity(
+    row: tuple[object, ...], year: int, previous_number: int,
+) -> tuple[int, str]:
     """Validate each row before grouping, including rows later rejected by V1."""
-    if type(row["source_year"]) is not int or row["source_year"] != year:
+    if type(row[_YEAR_INDEX]) is not int or row[_YEAR_INDEX] != year:
         raise InputIntegrityError("Inconsistent source_year in normalized input.")
-    number = row["source_row_number"]
+    number = row[_ROW_NUMBER_INDEX]
     if type(number) is not int or number <= previous_number:
         raise InputIntegrityError("source_row_number must be positive and strictly increasing.")
-    mutation_id = row["id_mutation"]
+    mutation_id = row[_ID_INDEX]
     if not isinstance(mutation_id, str) or not mutation_id.strip():
         raise InputIntegrityError("id_mutation must be a nonempty string.")
-    row["id_mutation"] = mutation_id.strip()
-    return number
+    return number, mutation_id.strip()
 
 
 def _complete_mutations(
-    parquet: pq.ParquetFile, year: int, batch_size: int, index: sqlite3.Connection,
-) -> Iterator[list[dict[str, object]]]:
-    """Yield only complete mutations; a batch boundary never flushes the current one."""
+    parquet: pq.ParquetFile, year: int, batch_size: int,
+) -> Iterator[list[tuple[object, ...]]]:
+    """Keep complete groups across batches; validate normalize.py's YYYY-N sequence."""
     current_id: str | None = None
-    current_rows: list[dict[str, object]] = []
+    current_rows: list[tuple[object, ...]] = []
+    mutation_number = 0
     previous_number = 0
     for batch in parquet.iter_batches(
         batch_size=batch_size, columns=list(REQUIRED_INPUT_COLUMNS), use_threads=False,
     ):
-        for row in batch.to_pylist():
-            previous_number = _validate_row_identity(row, year, previous_number)
-            mutation_id = row["id_mutation"]
+        columns = batch.to_pydict()
+        # Explicit None coordinates preserve the adapter's previous null semantics.
+        for row in zip(
+            *(columns[column] for column in REQUIRED_INPUT_COLUMNS),
+            repeat(None), repeat(None),
+        ):
+            previous_number, mutation_id = _validate_row_identity(row, year, previous_number)
+            if row[_ID_INDEX] != mutation_id:
+                row = (*row[:_ID_INDEX], mutation_id, *row[_ID_INDEX + 1:])
             if mutation_id != current_id:
-                try:
-                    index.execute("INSERT INTO mutation_ids VALUES (?)", (mutation_id,))
-                except sqlite3.IntegrityError as error:
-                    raise InputIntegrityError("Non-contiguous id_mutation reappeared.") from error
+                expected_id = f"{year}-{mutation_number + 1}"
+                if mutation_id != expected_id:
+                    raise InputIntegrityError(
+                        f"Invalid id_mutation sequence: expected {expected_id}. "
+                        "IDs must start at YYYY-1 and advance by one per contiguous group."
+                    )
+                mutation_number += 1
                 if current_rows:
                     yield current_rows
                 current_rows = []
@@ -230,12 +234,10 @@ def _complete_mutations(
 
 
 def _qualify_complete_mutation(
-    rows: list[dict[str, object]], report: QualificationReport,
+    rows: list[tuple[object, ...]], report: QualificationReport,
 ) -> dict[str, object] | None:
     """Adapt missing coordinates and delegate every business decision to clean.py."""
-    mutation = pd.DataFrame(rows, dtype=object)
-    mutation["longitude"] = None
-    mutation["latitude"] = None
+    mutation = pd.DataFrame(rows, columns=_MUTATION_COLUMNS, dtype=object)
     decision = clean.qualify_mutation(mutation)
     report.record(decision)
     if not decision.admissible:
@@ -245,20 +247,20 @@ def _qualify_complete_mutation(
         raise QualificationError("The V1 observation builder contradicted its admission.")
     residential = next(
         row for row in rows
-        if parse_finite_number(row["code_type_local"]) in clean.RESIDENTIAL_CODES
+        if parse_finite_number(row[_LOCAL_CODE_INDEX]) in clean.RESIDENTIAL_CODES
     )
-    for column in ("source_year", "nom_commune", "nombre_lots", "surface_terrain"):
-        observation[column] = residential[column]
+    for column, index in _RESIDENTIAL_METADATA:
+        observation[column] = residential[index]
     return observation
 
 
 def _write_observations(
-    parquet: pq.ParquetFile, writer: pq.ParquetWriter, index: sqlite3.Connection,
+    parquet: pq.ParquetFile, writer: pq.ParquetWriter,
     year: int, batch_size: int, report: QualificationReport,
 ) -> None:
     """Buffer only a bounded batch of admitted observations for each Parquet write."""
     observations: list[dict[str, object]] = []
-    for mutation in _complete_mutations(parquet, year, batch_size, index):
+    for mutation in _complete_mutations(parquet, year, batch_size):
         observation = _qualify_complete_mutation(mutation, report)
         del mutation
         if observation is not None:
@@ -312,16 +314,13 @@ def qualify_dvf_year(
                 dir=destination.parent, prefix=f".{destination.name}.", suffix=".part", delete=False,
             ) as temporary:
                 temporary_path = Path(temporary.name)
-            with (
-                _mutation_index(destination.parent) as index,
-                pq.ParquetWriter(temporary_path, QUALIFIED_SCHEMA) as writer,
-            ):
-                _write_observations(parquet, writer, index, year, config.batch_size, report)
+            with pq.ParquetWriter(temporary_path, QUALIFIED_SCHEMA) as writer:
+                _write_observations(parquet, writer, year, config.batch_size, report)
         _validate_output(temporary_path, report)
         if destination.exists() and not force:
             raise FileExistsError("Qualified DVF output appeared during processing.")
         os.replace(temporary_path, destination)
-    except (pa.ArrowException, sqlite3.Error) as error:
+    except pa.ArrowException as error:
         raise QualificationError("Parquet qualification execution failed.") from error
     finally:
         if temporary_path is not None:
