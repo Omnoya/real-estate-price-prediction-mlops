@@ -3,8 +3,8 @@
 La couche `qualify.py` lit le Parquet normalisé et applique le contrat métier
 existant de `clean.py`. Le grain d'entrée est **une ligne DVF normalisée** ; le
 grain de sortie est **une mutation résidentielle simple admissible**. Toutes les
-lignes d'une mutation sont présentées ensemble à `qualify_mutation`, puis
-`build_observation` construit l'observation si elle est admissible.
+lignes d'une mutation sont présentées ensemble à `clean.analyze_mutation`, qui
+retourne la décision et l'observation éventuelle après une seule analyse.
 
 `id_mutation` conserve le sens défini lors de la normalisation : il identifie un
 bloc contigu synthétique, local à une publication. Il n'est ni un identifiant
@@ -46,12 +46,12 @@ n'est réalisée.
 
 ## Adaptation et schéma de sortie
 
-`clean.py` et `validate.py` restent inchangés. Le Parquet normalisé ne contient
+Le contrat métier et `validate.py` sont conservés. Le Parquet normalisé ne contient
 pas les colonnes `longitude` et `latitude`, alors que l'interface de `clean.py`
 les exige. L'adaptateur les fournit avec la valeur `None` et les conserve nulles
 en sortie. Aucun géocodage n'est effectué.
 
-Les champs produits par `build_observation` sont réutilisés. `source_year`,
+Les champs de l'observation restent ceux de `build_observation`. `source_year`,
 `nom_commune`, `nombre_lots` et `surface_terrain` sont copiés depuis l'unique ligne
 résidentielle admissible. Les lots et la surface de terrain ne sont pas sommés
 avec ceux des autres lignes de la mutation.
@@ -100,17 +100,42 @@ est constante, sans index SQLite ni collection des identifiants déjà rencontr�
 Il exige un fichier normalisé complet ; un extrait commençant à `YYYY-2` est refusé.
 
 Chaque batch Arrow est converti par colonnes, puis parcouru sous forme de tuples,
-sans dictionnaire par ligne. Les coordonnées `None` sont fournies directement au
-constructeur de la DataFrame de chaque mutation. `clean.qualify_mutation` et
-`clean.build_observation` restent appelées sans modification ; la seconde conserve
-sa propre vérification d'admission. Les observations restent mises en tampon
-avant écriture, dans l'ordre des mutations admissibles. Ces changements réduisent
-des allocations et suppriment l'index disque ; le gain de temps sur l'année réelle
-reste à mesurer.
+sans dictionnaire par ligne. Les coordonnées `None` sont fournies explicitement.
+Les observations restent mises en tampon avant écriture, dans l'ordre des
+mutations admissibles.
 
 Une erreur d'intégrité interrompt l'exécution ; elle n'est pas comptée comme un
 rejet métier. Les validations de lignes sont progressives et doivent toutes
 réussir avant la publication du fichier final.
+
+## Évaluateur métier canonique
+
+`clean.analyze_mutation` contient l'unique implémentation des règles V1. Il reçoit
+une séquence de `MutationRow` (tuples nommés) et retourne une `MutationAnalysis` :
+décision, observation éventuelle et position de l'unique ligne résidentielle.
+Les contrôles suivent leur priorité existante, puis les valeurs analysées sont
+réutilisées pour construire l'observation. Une valeur foncière invalide reste
+prioritaire sur une incohérence de montant, même si elle arrive après celle-ci.
+
+Les identifiants, codes locaux et montants sont analysés une seule fois par appel.
+Le calcul final reste `float(valeur_source) / float(surface_source)`, après les
+contrôles Decimal et de représentation float existants. Les montants nuls ou
+négatifs restent autorisés ; aucune règle économique n'est ajoutée.
+
+Les API publiques `qualify_mutation(DataFrame)` et `build_observation(DataFrame)`
+valident toujours le schéma d'entrée et délèguent au même évaluateur. L'adaptateur
+préserve la conversion des identifiants selon le dtype Pandas. Chaque appel
+effectue une nouvelle analyse : aucune décision mise en cache ne peut devenir
+obsolète après une modification du DataFrame. Le builder ne peut pas être appelé
+avec une admission fournie par l'appelant pour contourner les contrôles.
+
+Le pipeline streaming utilise directement l'API combinée, sans construire de
+DataFrame ou Series par mutation. La position résidentielle renvoyée sert à copier
+les métadonnées auxiliaires sans répéter la recherche ni le parsing des codes.
+Les règles, raisons de rejet, schéma de sortie et ordre des observations sont
+communs aux deux API. Le comparateur de Parquet reste disponible pour vérifier
+la future exécution complète ; aucun temps annuel n'est déduit d'un benchmark
+sur un sous-ensemble.
 
 ## Comparaison logique de deux sorties
 

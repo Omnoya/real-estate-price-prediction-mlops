@@ -16,7 +16,6 @@ from dataclasses import dataclass, field
 from itertools import repeat
 from pathlib import Path
 
-import pandas as pd
 import pyarrow as pa
 import pyarrow.parquet as pq
 import yaml
@@ -26,7 +25,6 @@ from real_estate.data.normalize import DEFAULT_CONFIG_PATH, load_normalization_c
 from real_estate.data.validate import (
     REQUIRED_COLUMNS,
     ExclusionReason,
-    parse_finite_number,
 )
 
 REQUIRED_INPUT_COLUMNS = tuple(
@@ -38,7 +36,7 @@ _MUTATION_COLUMNS = (*REQUIRED_INPUT_COLUMNS, "longitude", "latitude")
 _YEAR_INDEX = _MUTATION_COLUMNS.index("source_year")
 _ROW_NUMBER_INDEX = _MUTATION_COLUMNS.index("source_row_number")
 _ID_INDEX = _MUTATION_COLUMNS.index("id_mutation")
-_LOCAL_CODE_INDEX = _MUTATION_COLUMNS.index("code_type_local")
+_BUSINESS_INDEXES = tuple(_MUTATION_COLUMNS.index(column) for column in clean.MutationRow._fields)
 _RESIDENTIAL_METADATA = tuple(
     (column, _MUTATION_COLUMNS.index(column))
     for column in ("source_year", "nom_commune", "nombre_lots", "surface_terrain")
@@ -237,18 +235,16 @@ def _qualify_complete_mutation(
     rows: list[tuple[object, ...]], report: QualificationReport,
 ) -> dict[str, object] | None:
     """Adapt missing coordinates and delegate every business decision to clean.py."""
-    mutation = pd.DataFrame(rows, columns=_MUTATION_COLUMNS, dtype=object)
-    decision = clean.qualify_mutation(mutation)
-    report.record(decision)
-    if not decision.admissible:
+    analysis = clean.analyze_mutation([
+        clean.MutationRow(*(row[index] for index in _BUSINESS_INDEXES)) for row in rows
+    ])
+    report.record(analysis.decision)
+    if not analysis.decision.admissible:
         return None
-    observation = clean.build_observation(mutation)
-    if observation is None:
+    observation = analysis.observation
+    if observation is None or analysis.residential_index is None:
         raise QualificationError("The V1 observation builder contradicted its admission.")
-    residential = next(
-        row for row in rows
-        if parse_finite_number(row[_LOCAL_CODE_INDEX]) in clean.RESIDENTIAL_CODES
-    )
+    residential = rows[analysis.residential_index]
     for column, index in _RESIDENTIAL_METADATA:
         observation[column] = residential[index]
     return observation

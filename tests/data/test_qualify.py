@@ -186,33 +186,30 @@ def test_complete_mutations_cross_batches_and_final_mutation_is_qualified(
     assert result.report.rejection_counts[ExclusionReason.RESIDENTIAL_ROW_COUNT] == 1
 
 
-def test_existing_clean_functions_receive_complete_mutations(
+def test_canonical_analysis_receives_complete_mutations_once_without_dataframes(
     tmp_path: Path, config: QualificationConfig, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     write_input(tmp_path, config, numbered_rows([
         {}, ANNEX, {"id_mutation": "2025-2"}, {"id_mutation": "2025-2"},
     ]))
-    qualified = []
-    built = []
+    analyzed = []
+    canonical = clean_module.analyze_mutation
 
-    def spy_qualify(frame: pd.DataFrame) -> object:
-        qualified.append((frame["id_mutation"].unique().tolist(), len(frame)))
-        assert frame["longitude"].isna().all()
-        assert frame["latitude"].isna().all()
-        return qualify_mutation(frame)
+    def spy_analyze(rows: list[clean_module.MutationRow]) -> clean_module.MutationAnalysis:
+        analyzed.append(([source.id_mutation for source in rows], len(rows)))
+        assert all(source.longitude is None and source.latitude is None for source in rows)
+        return canonical(rows)
 
-    def spy_build(frame: pd.DataFrame) -> object:
-        built.append((frame["id_mutation"].unique().tolist(), len(frame)))
-        return build_observation(frame)
+    def forbid_dataframe(*args: object, **kwargs: object) -> None:
+        raise AssertionError("The streaming hot path must not build DataFrames")
 
-    monkeypatch.setattr(clean_module, "qualify_mutation", spy_qualify)
-    monkeypatch.setattr(clean_module, "build_observation", spy_build)
+    monkeypatch.setattr(clean_module, "analyze_mutation", spy_analyze)
+    monkeypatch.setattr(pd, "DataFrame", forbid_dataframe)
     result = qualify_dvf_year(2025, replace(config, batch_size=1), tmp_path)
     assert result.report.mutations_seen == 2
-    assert (["2025-1"], 2) in qualified
-    assert (["2025-2"], 2) in qualified
-    assert all(size == 2 for _, size in qualified)
-    assert built == [(["2025-1"], 2)]
+    assert analyzed == [(["2025-1", "2025-1"], 2), (["2025-2", "2025-2"], 2)]
+    assert result.report.mutations_admissible == 1
+    assert result.report.mutations_rejected == 1
 
 
 def test_sequential_ids_allow_surrounding_whitespace_and_row_number_gaps(
