@@ -17,6 +17,9 @@ dvf:
   normalization:
     output_directory: data/interim/dvf/normalized
     batch_size: 10000
+  qualification:
+    output_directory: data/processed/dvf/qualified
+    batch_size: 10000
   resources:
     2021: "https://www.data.gouv.fr/api/1/datasets/r/947677ab-ad21-48f4-a9ac-ad217c99cf39"
     2022: "https://www.data.gouv.fr/api/1/datasets/r/be6e092d-292a-4568-90bf-4254a261ff3b"
