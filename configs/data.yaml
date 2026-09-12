@@ -26,3 +26,20 @@ dvf:
     2023: "https://www.data.gouv.fr/api/1/datasets/r/025b9d29-8efb-40bb-8ce6-5bddf97a4e51"
     2024: "https://www.data.gouv.fr/api/1/datasets/r/99a26050-b94f-4ffc-9eb0-73ed28a895d1"
     2025: "https://www.data.gouv.fr/api/1/datasets/r/902db087-b0eb-4cbb-a968-0b499bde5bc4"
+
+cog:
+  source_name: "INSEE — Code officiel géographique (COG)"
+  source_page: "https://www.insee.fr/fr/information/2560452"
+  years: [2021, 2022, 2023, 2024, 2025]
+  raw_directory: data/raw/cog
+  manifest_filename: manifest.json
+  connect_timeout_seconds: 10
+  read_timeout_seconds: 60
+  chunk_size_bytes: 1048576
+  max_attempts: 3
+  resources:
+    2021: "https://www.insee.fr/fr/statistiques/fichier/5057840/cog_ensemble_2021_csv.zip"
+    2022: "https://www.insee.fr/fr/statistiques/fichier/6051727/cog_ensemble_2022_csv.zip"
+    2023: "https://www.insee.fr/fr/statistiques/fichier/6800675/cog_ensemble_2023_csv.zip"
+    2024: "https://www.insee.fr/fr/statistiques/fichier/7766585/cog_ensemble_2024_csv.zip"
+    2025: "https://www.insee.fr/fr/statistiques/fichier/8377162/cog_ensemble_2025_csv.zip"
