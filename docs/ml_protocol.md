@@ -64,3 +64,32 @@ appartements :
 La MAPE n'est pas utilisée, car des targets valides mais très proches de zéro
 la rendent trompeuse. Aucune métrique 2025 ne sera produite avant le gel du
 modèle final.
+
+## Premier modèle CatBoost
+
+Le premier modèle ML est un `CatBoostRegressor`. Ce choix permet de transmettre
+directement les sept variables catégorielles du contrat à CatBoost, sans créer
+de one-hot encoding global ni apprendre un encodage manuel. Les catégories
+nulles prennent la valeur stable `__MISSING__`. Les valeurs numériques absentes
+restent des `NaN`, que CatBoost traite nativement, et les booléens sont convertis
+de façon déterministe en 0/1.
+
+Le premier canari utilise les paramètres fixes suivants : 1 000 itérations,
+un taux d'apprentissage de 0,05, une profondeur de 8 et la graine 42. La
+validation temporelle 2024 est fournie comme `eval_set` avec un early stopping
+de 100 itérations et `use_best_model=True`. Elle ne sert à calculer aucune
+feature, catégorie ou statistique de préparation. Aucun tuning n'est réalisé à
+ce stade et CatBoost est configuré pour ne pas écrire ses fichiers de suivi
+locaux.
+
+Le rapport compare les trois métriques globales au benchmark validé
+`DEPARTMENT_TYPE_MEDIAN` : RMSE log 0,6590399945589221, MAE 1 147,7414970737116
+€/m² et erreur absolue médiane 754,010441767065 €/m². `absolute_delta` vaut
+`model_value - baseline_value` ; une valeur négative indique donc une
+amélioration. Le pourcentage d'amélioration est positif lorsque le modèle fait
+mieux.
+
+La commande CatBoost partage le même chargeur de développement que les
+baselines : elle ouvre seulement 2021--2023 pour le fit et 2024 pour
+l'évaluation. Elle n'expose aucune option permettant de lire ou d'évaluer 2025.
+Le test final reste scellé jusqu'au gel séparé du modèle.

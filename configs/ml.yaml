@@ -31,3 +31,14 @@ features:
     - mutation_month
     - surface_terrain_missing
     - geography_unresolved
+
+catboost:
+  loss_function: RMSE
+  eval_metric: RMSE
+  iterations: 1000
+  learning_rate: 0.05
+  depth: 8
+  random_seed: 42
+  thread_count: -1
+  early_stopping_rounds: 100
+  allow_writing_files: false
