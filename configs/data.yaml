@@ -37,6 +37,14 @@ cog:
   read_timeout_seconds: 60
   chunk_size_bytes: 1048576
   max_attempts: 3
+  geography:
+    output_directory: data/interim/cog/geography
+    current_commune_files:
+      2021: commune2021.csv
+      2022: commune_2022.csv
+      2023: v_commune_2023.csv
+      2024: v_commune_2024.csv
+      2025: v_commune_2025.csv
   resources:
     2021: "https://www.insee.fr/fr/statistiques/fichier/5057840/cog_ensemble_2021_csv.zip"
     2022: "https://www.insee.fr/fr/statistiques/fichier/6051727/cog_ensemble_2022_csv.zip"
