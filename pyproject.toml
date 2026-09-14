@@ -9,6 +9,7 @@ description = "Reconstruction indépendante d'un projet de prédiction des prix 
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
+    "numpy",
     "pandas",
     "pyarrow",
     "requests",

@@ -1,0 +1,33 @@
+# Contrat ML V1. Le test 2025 est déclaré mais jamais chargé par les baselines.
+data:
+  annual_input: data/processed/dvf/geography/dvf_{year}.parquet
+
+split:
+  train_years: [2021, 2022, 2023]
+  validation_year: 2024
+  test_year: 2025
+
+target: prix_m2
+target_transform: log
+
+features:
+  numeric:
+    - surface_reelle_bati
+    - nombre_pieces_principales
+    - nombre_lots
+    - surface_terrain
+  boolean:
+    - has_dependance
+  categorical:
+    - code_type_local
+    - code_postal
+    - code_departement
+    - source_code_commune
+    - canonical_commune_code
+    - resolved_geo_type
+    - region_code
+  derived:
+    - mutation_year
+    - mutation_month
+    - surface_terrain_missing
+    - geography_unresolved
