@@ -20,6 +20,11 @@ dvf:
   qualification:
     output_directory: data/processed/dvf/qualified
     batch_size: 10000
+  geography_enrichment:
+    qualified_input: data/processed/dvf/qualified/dvf_{year}.parquet
+    geography_input: data/interim/cog/geography/cog_geography_{year}.parquet
+    output: data/processed/dvf/geography/dvf_{year}.parquet
+    batch_size: 50000
   resources:
     2021: "https://www.data.gouv.fr/api/1/datasets/r/947677ab-ad21-48f4-a9ac-ad217c99cf39"
     2022: "https://www.data.gouv.fr/api/1/datasets/r/be6e092d-292a-4568-90bf-4254a261ff3b"
