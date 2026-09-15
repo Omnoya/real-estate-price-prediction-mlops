@@ -42,6 +42,11 @@ project.db
 mlruns/
 mlartifacts/
 mlflow.db
+mlflow.db-shm
+mlflow.db-wal
+catboost_info/
+*.cbm
+*.part
 
 # IDE et OS
 .idea/

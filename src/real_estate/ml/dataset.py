@@ -294,7 +294,8 @@ def load_ml_year(path: Path, expected_year: int) -> MLDataset:
     return build_ml_dataset(_read_source(path), expected_year)
 
 
-def _concat(datasets: list[MLDataset]) -> MLDataset:
+def concatenate_ml_datasets(datasets: list[MLDataset]) -> MLDataset:
+    """Concatenate explicit annual datasets without changing their row order."""
     if not datasets:
         raise ValueError("At least one ML dataset is required.")
     return MLDataset(
@@ -308,7 +309,7 @@ def load_training_data(config: MLConfig, project_root: Path) -> MLDataset:
     """Load only 2021--2023 in chronological order."""
     if config.test_year in config.train_years or config.validation_year in config.train_years:
         raise ValueError("Training years overlap a held-out year.")
-    return _concat([
+    return concatenate_ml_datasets([
         load_ml_year(annual_path(config, project_root, year), year)
         for year in config.train_years
     ])

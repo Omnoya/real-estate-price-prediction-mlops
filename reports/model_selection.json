@@ -1,0 +1,35 @@
+{
+  "baseline": {
+    "metrics": {
+      "mae_eur_m2": 1147.7414970737116,
+      "median_ae_eur_m2": 754.010441767065,
+      "rmse_log": 0.6590399945589221
+    },
+    "name": "DEPARTMENT_TYPE_MEDIAN"
+  },
+  "freeze": {
+    "additional_changes_from_2024_performance_allowed": false,
+    "test_used_for_selection": false,
+    "test_year": 2025
+  },
+  "model_version": "v1",
+  "selected_model": {
+    "best_iteration": 2999,
+    "metrics": {
+      "mae_eur_m2": 829.2568229919669,
+      "median_ae_eur_m2": 494.46181031372157,
+      "rmse_log": 0.5454508466588915
+    },
+    "model": "CatBoostRegressor",
+    "training_budget": 3000
+  },
+  "selection_protocol": {
+    "train_years": [
+      2021,
+      2022,
+      2023
+    ],
+    "validation_year": 2024
+  },
+  "status": "frozen"
+}

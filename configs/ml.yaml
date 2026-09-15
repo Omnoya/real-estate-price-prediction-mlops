@@ -42,3 +42,9 @@ catboost:
   thread_count: -1
   early_stopping_rounds: 100
   allow_writing_files: false
+
+mlflow:
+  tracking_database: mlflow.db
+  artifact_directory: mlartifacts
+  experiment_name: real-estate-price-v1
+  model_artifact_name: model

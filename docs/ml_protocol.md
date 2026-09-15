@@ -65,31 +65,54 @@ La MAPE n'est pas utilisée, car des targets valides mais très proches de zéro
 la rendent trompeuse. Aucune métrique 2025 ne sera produite avant le gel du
 modèle final.
 
-## Premier modèle CatBoost
+## Modèle CatBoost V1 gelé
 
-Le premier modèle ML est un `CatBoostRegressor`. Ce choix permet de transmettre
-directement les sept variables catégorielles du contrat à CatBoost, sans créer
-de one-hot encoding global ni apprendre un encodage manuel. Les catégories
-nulles prennent la valeur stable `__MISSING__`. Les valeurs numériques absentes
-restent des `NaN`, que CatBoost traite nativement, et les booléens sont convertis
-de façon déterministe en 0/1.
+Le modèle retenu est un `CatBoostRegressor`. Il reçoit directement les sept
+variables catégorielles du contrat, sans one-hot encoding global ni encodage
+appris manuellement. Les catégories nulles prennent la valeur stable
+`__MISSING__`, les valeurs numériques absentes restent des `NaN` et les booléens
+sont convertis de façon déterministe en 0/1.
 
-Le premier canari utilise les paramètres fixes suivants : 1 000 itérations,
-un taux d'apprentissage de 0,05, une profondeur de 8 et la graine 42. La
-validation temporelle 2024 est fournie comme `eval_set` avec un early stopping
-de 100 itérations et `use_best_model=True`. Elle ne sert à calculer aucune
-feature, catégorie ou statistique de préparation. Aucun tuning n'est réalisé à
-ce stade et CatBoost est configuré pour ne pas écrire ses fichiers de suivi
-locaux.
+La sélection a utilisé 2021--2023 pour l'apprentissage et 2024 pour la
+validation temporelle. Avec un budget de 3 000 itérations, la meilleure
+itération observée était 2 999. Les métriques officielles de validation sont :
 
-Le rapport compare les trois métriques globales au benchmark validé
-`DEPARTMENT_TYPE_MEDIAN` : RMSE log 0,6590399945589221, MAE 1 147,7414970737116
-€/m² et erreur absolue médiane 754,010441767065 €/m². `absolute_delta` vaut
-`model_value - baseline_value` ; une valeur négative indique donc une
-amélioration. Le pourcentage d'amélioration est positif lorsque le modèle fait
-mieux.
+- RMSE log : 0,5454508466588915 ;
+- MAE : 829,2568229919669 €/m² ;
+- erreur absolue médiane : 494,46181031372157 €/m².
 
-La commande CatBoost partage le même chargeur de développement que les
-baselines : elle ouvre seulement 2021--2023 pour le fit et 2024 pour
-l'évaluation. Elle n'expose aucune option permettant de lire ou d'évaluer 2025.
-Le test final reste scellé jusqu'au gel séparé du modèle.
+La baseline `DEPARTMENT_TYPE_MEDIAN` obtenait respectivement
+0,6590399945589221, 1 147,7414970737116 €/m² et 754,010441767065 €/m². Le détail
+versionné de la sélection se trouve dans `reports/model_selection.json`.
+
+Le tuning est terminé. Les features, la target, le traitement des valeurs
+extrêmes, l'architecture et les hyperparamètres ne peuvent plus être modifiés à
+partir des résultats 2024. Le modèle V1 utilise `RMSE`, 3 000 itérations, un
+taux d'apprentissage de 0,05, une profondeur de 8, la graine 42 et désactive les
+fichiers de suivi CatBoost.
+
+## Entraînement final et MLflow
+
+Le fit final réunit 2021, 2022, 2023 et 2024, soit 2 569 244 observations
+attendues. Il exécute exactement 3 000 itérations. Il n'utilise ni `eval_set` ni
+early stopping : 2024 appartient désormais au train final et le budget a été
+gelé lors de la sélection. Aucune statistique de 2025 n'intervient dans ce fit.
+
+Chaque entraînement final crée un run dans un store SQLite MLflow local et place
+ses artefacts dans un répertoire local séparé. Le run consigne le protocole, les
+hyperparamètres, les versions logicielles, le commit Git, le contrat ordonné des
+features, la configuration, le rapport de sélection et le modèle CatBoost. Les
+données DVF ne sont jamais loggées. Le store, le modèle et les artefacts générés
+restent hors Git.
+
+## Test final scellé
+
+La commande `train` ne possède aucun chemin vers 2025. Seule la commande
+explicite `evaluate --run-id` peut ouvrir les 591 274 observations du test,
+après avoir vérifié le run gelé et rechargé son modèle depuis MLflow. Elle
+calcule les trois métriques globalement, puis pour maisons et appartements, et
+les ajoute au run.
+
+Le tag MLflow `test_evaluated=true` interdit une seconde évaluation du même run.
+Il n'existe pas d'option de contournement. Après l'observation des métriques
+2025, aucune modification ni ré-optimisation du modèle V1 n'est autorisée.
