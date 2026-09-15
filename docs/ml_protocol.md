@@ -4,12 +4,12 @@
 
 Le développement utilise les transactions 2021, 2022 et 2023 pour
 l'apprentissage et les transactions 2024 pour la validation. Aucun tirage
-aléatoire n'est effectué. Le test final 2025 reste scellé : les commandes de
-baseline ne disposent d'aucune option qui le charge ou l'évalue.
+aléatoire n'est effectué. Le test final 2025 a été maintenu scellé pendant la
+sélection : les commandes de baseline ne disposent d'aucune option qui le
+charge ou l'évalue.
 
-Les volumes attendus lors de l'exécution réelle sont 2 048 075 lignes de train,
-521 169 lignes de validation et 591 274 lignes de test. Cette implémentation ne
-lit et ne valide pas encore le test réel.
+Les volumes de sélection sont 2 048 075 lignes de train et 521 169 lignes de
+validation. Le test final contient 591 274 lignes.
 
 ## Target
 
@@ -105,14 +105,27 @@ features, la configuration, le rapport de sélection et le modèle CatBoost. Les
 données DVF ne sont jamais loggées. Le store, le modèle et les artefacts générés
 restent hors Git.
 
-## Test final scellé
+## Test final fermé
 
-La commande `train` ne possède aucun chemin vers 2025. Seule la commande
-explicite `evaluate --run-id` peut ouvrir les 591 274 observations du test,
-après avoir vérifié le run gelé et rechargé son modèle depuis MLflow. Elle
-calcule les trois métriques globalement, puis pour maisons et appartements, et
-les ajoute au run.
+La commande `train` ne possède aucun chemin vers 2025. La commande explicite
+`evaluate --run-id` a ouvert une seule fois les 591 274 observations du test,
+après vérification du run gelé et rechargement de son modèle depuis MLflow.
 
-Le tag MLflow `test_evaluated=true` interdit une seconde évaluation du même run.
-Il n'existe pas d'option de contournement. Après l'observation des métriques
-2025, aucune modification ni ré-optimisation du modèle V1 n'est autorisée.
+Les résultats définitifs 2025 sont :
+
+- global : RMSE log 0,5142518638253868, MAE 841,7623633027805 €/m² et erreur
+  absolue médiane 497,8948115618889 €/m² ;
+- maisons : RMSE log 0,5162246411847635, MAE 657,7340904677158 €/m² et erreur
+  absolue médiane 436,505573319492 €/m² ;
+- appartements : RMSE log 0,5128061726001529, MAE 976,1746318557172 €/m² et
+  erreur absolue médiane 556,1008610844178 €/m².
+
+La validation 2024 a servi exclusivement à sélectionner et geler le modèle. Le
+test 2025 mesure sa performance finale après réentraînement sur 2021--2024 ; il
+ne constitue pas une nouvelle validation.
+
+Les tags MLflow `test_evaluation_started=true` et `test_evaluated=true`
+ferment définitivement ce test. Il n'existe pas d'option de contournement.
+Aucune modification ni ré-optimisation du modèle V1 à partir des résultats
+2025 n'est autorisée. Le résultat complet est conservé dans
+`reports/final_test_2025.json`.

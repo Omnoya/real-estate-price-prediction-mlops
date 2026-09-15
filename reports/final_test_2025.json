@@ -1,0 +1,51 @@
+{
+  "model": "CatBoostRegressor",
+  "model_version": "v1",
+  "training_git_commit": "3cd2b39751085c5f38712975b08d6c0f2d70b0d3",
+  "mlflow_run_id": "f140d75d05504aacad1ea18a09f0f4a4",
+  "feature_contract_sha256": "359c725765a7eee4b23798ed7620c9c2d65973e9a63a03fa1369dfac5e39b7f9",
+  "train_years": [
+    2021,
+    2022,
+    2023,
+    2024
+  ],
+  "train_rows": 2569244,
+  "test_year": 2025,
+  "test_rows": 591274,
+  "target": "log_prix_m2",
+  "catboost": {
+    "iterations": 3000,
+    "learning_rate": 0.05,
+    "depth": 8,
+    "random_seed": 42
+  },
+  "versions": {
+    "catboost": "1.2.10",
+    "mlflow": "3.16.0"
+  },
+  "metrics": {
+    "global": {
+      "rmse_log": 0.5142518638253868,
+      "mae_eur_m2": 841.7623633027805,
+      "median_ae_eur_m2": 497.8948115618889,
+      "rows": 591274
+    },
+    "house": {
+      "rmse_log": 0.5162246411847635,
+      "mae_eur_m2": 657.7340904677158,
+      "median_ae_eur_m2": 436.505573319492,
+      "rows": 249574
+    },
+    "apartment": {
+      "rmse_log": 0.5128061726001529,
+      "mae_eur_m2": 976.1746318557172,
+      "median_ae_eur_m2": 556.1008610844178,
+      "rows": 341700
+    }
+  },
+  "test_evaluation_started": true,
+  "test_evaluated": true,
+  "test_protocol": "one-shot temporal holdout",
+  "retuning_after_test": false
+}
