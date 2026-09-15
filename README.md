@@ -1,5 +1,7 @@
 # Real Estate Price Prediction — Data Engineering, Machine Learning & MLOps
 
+[![CI](https://github.com/Omnoya/real-estate-price-prediction-mlops/actions/workflows/ci.yml/badge.svg)](https://github.com/Omnoya/real-estate-price-prediction-mlops/actions/workflows/ci.yml)
+
 A reproducible pipeline for French real-estate transactions, annual geographic
 resolution, strict temporal validation, CatBoost modelling, MLflow tracking,
 FastAPI serving, Docker packaging, and continuous integration.
