@@ -12,6 +12,10 @@ Les valeurs par défaut sont :
 - `REAL_ESTATE_MLFLOW_TRACKING_URI=sqlite:///mlflow.db`
 - `REAL_ESTATE_MODEL_RUN_ID=f140d75d05504aacad1ea18a09f0f4a4`
 
+Quand `REAL_ESTATE_MODEL_BUNDLE_DIR` est défini, le bundle autonome est
+prioritaire et MLflow n'est pas consulté. Un bundle absent ou invalide fait
+échouer le démarrage de l'application.
+
 Ces variables permettent de sélectionner un autre emplacement local et un run
 compatible. Avant de servir, l'application contrôle la version `v1`, le statut
 gelé du protocole, la target, le type CatBoost, le hash du contrat de features,

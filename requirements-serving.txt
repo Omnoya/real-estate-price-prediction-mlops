@@ -1,0 +1,7 @@
+catboost==1.2.10
+fastapi==0.141.1
+numpy==2.5.3
+pandas==3.0.5
+pyarrow==25.0.1
+PyYAML==6.0.3
+uvicorn==0.53.0

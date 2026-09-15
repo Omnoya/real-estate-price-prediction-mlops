@@ -156,14 +156,50 @@ def test_serving_settings_use_safe_defaults_and_environment_overrides() -> None:
     assert configured.run_id == "synthetic-run"
 
 
+def test_configured_loader_prefers_standalone_bundle_without_mlflow(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    model = CapturingModel()
+    calls = []
+    monkeypatch.setattr(
+        service,
+        "load_serving_bundle",
+        lambda path: calls.append(path) or model,
+    )
+    monkeypatch.setattr(
+        service,
+        "load_prediction_service",
+        lambda *_args: pytest.fail("Bundle serving must not consult MLflow."),
+    )
+    predictor = service.load_configured_prediction_service({
+        "REAL_ESTATE_MODEL_BUNDLE_DIR": str(tmp_path / "model")
+    })
+    assert predictor.model is model
+    assert calls == [tmp_path / "model"]
+
+
+def test_invalid_configured_bundle_is_a_fatal_startup_error(
+    tmp_path: Path,
+) -> None:
+    with pytest.raises(service.BundleModelUnavailableError):
+        service.load_configured_prediction_service({
+            "REAL_ESTATE_MODEL_BUNDLE_DIR": str(tmp_path / "missing")
+        })
+
+
 def test_loader_validates_run_and_frozen_hash(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     run = SimpleNamespace(data=SimpleNamespace(params={}))
     calls = []
-    monkeypatch.setattr(service, "_validate_run_contract", lambda *_args: calls.append("run"))
     monkeypatch.setattr(
-        service,
+        final_model,
+        "_validate_run_contract",
+        lambda *_args: calls.append("run"),
+    )
+    monkeypatch.setattr(
+        final_model,
         "_feature_contract_sha256",
         lambda: service.EXPECTED_FEATURE_CONTRACT_SHA256,
     )
@@ -178,7 +214,7 @@ def test_loader_validates_run_and_frozen_hash(
 def test_loader_rejects_wrong_frozen_feature_contract(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(service, "_feature_contract_sha256", lambda: "wrong")
+    monkeypatch.setattr(final_model, "_feature_contract_sha256", lambda: "wrong")
     with pytest.raises(service.ModelUnavailableError, match="Local feature contract"):
         service._validate_frozen_run(object(), Path("configs/ml.yaml"))
 

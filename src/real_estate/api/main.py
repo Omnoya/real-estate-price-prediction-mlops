@@ -13,17 +13,18 @@ from real_estate.api.schemas import (
     PredictionResponse,
 )
 from real_estate.api.service import (
+    BundleModelUnavailableError,
     ModelServiceError,
     ModelUnavailableError,
     PredictionService,
-    load_prediction_service,
+    load_configured_prediction_service,
 )
 
 
 def create_app(
     service: PredictionService | None = None,
     *,
-    service_loader: Callable[[], PredictionService] = load_prediction_service,
+    service_loader: Callable[[], PredictionService] = load_configured_prediction_service,
 ) -> FastAPI:
     """Create an app with deferred loading or an injected synthetic service."""
 
@@ -35,6 +36,8 @@ def create_app(
             try:
                 application.state.prediction_service = service_loader()
                 application.state.model_available = True
+            except BundleModelUnavailableError:
+                raise
             except ModelUnavailableError:
                 application.state.prediction_service = None
                 application.state.model_available = False

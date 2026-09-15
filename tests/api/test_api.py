@@ -10,7 +10,11 @@ import pytest
 from fastapi.testclient import TestClient
 
 from real_estate.api.main import create_app
-from real_estate.api.service import ModelUnavailableError, PredictionService
+from real_estate.api.service import (
+    BundleModelUnavailableError,
+    ModelUnavailableError,
+    PredictionService,
+)
 
 
 class FixedModel:
@@ -148,6 +152,17 @@ def test_model_loader_runs_once_at_application_startup() -> None:
         assert client.get("/model").status_code == 200
         assert client.post("/predict", json=valid_payload()).status_code == 200
     assert calls == ["loaded"]
+
+
+def test_invalid_explicit_bundle_fails_application_startup() -> None:
+    def fail_bundle() -> PredictionService:
+        raise BundleModelUnavailableError("invalid bundle")
+
+    with (
+        pytest.raises(BundleModelUnavailableError, match="invalid bundle"),
+        TestClient(create_app(service_loader=fail_bundle)),
+    ):
+        pass
 
 
 def test_imported_app_defers_default_model_loading(

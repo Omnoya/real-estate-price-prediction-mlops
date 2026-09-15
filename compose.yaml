@@ -1,0 +1,12 @@
+services:
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: real-estate-api:v1
+    environment:
+      REAL_ESTATE_MODEL_BUNDLE_DIR: /app/model
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./artifacts/serving/v1:/app/model:ro

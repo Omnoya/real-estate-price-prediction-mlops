@@ -9,10 +9,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-import mlflow
 import numpy as np
 import pandas as pd
-from mlflow.tracking import MlflowClient
 
 from real_estate.api.schemas import PredictionRequest
 from real_estate.ml.catboost_model import (
@@ -26,20 +24,17 @@ from real_estate.ml.dataset import (
     FEATURE_COLUMNS,
     TARGET_COLUMN,
 )
-from real_estate.ml.final_model import (
+from real_estate.ml.serving_bundle import (
+    FEATURE_CONTRACT_SHA256,
     MODEL_VERSION,
-    _feature_contract_sha256,
-    _load_model,
-    _validate_loaded_model,
-    _validate_run_contract,
+    ServingBundleError,
+    load_serving_bundle,
 )
-from real_estate.ml.tracking import load_tracking_settings
 
 DEFAULT_TRACKING_URI = "sqlite:///mlflow.db"
 DEFAULT_MODEL_RUN_ID = "f140d75d05504aacad1ea18a09f0f4a4"
-EXPECTED_FEATURE_CONTRACT_SHA256 = (
-    "359c725765a7eee4b23798ed7620c9c2d65973e9a63a03fa1369dfac5e39b7f9"
-)
+MODEL_BUNDLE_ENVIRONMENT_VARIABLE = "REAL_ESTATE_MODEL_BUNDLE_DIR"
+EXPECTED_FEATURE_CONTRACT_SHA256 = FEATURE_CONTRACT_SHA256
 
 
 class ModelServiceError(RuntimeError):
@@ -48,6 +43,10 @@ class ModelServiceError(RuntimeError):
 
 class ModelUnavailableError(ModelServiceError):
     """The configured MLflow run or model is unavailable or incompatible."""
+
+
+class BundleModelUnavailableError(ModelUnavailableError):
+    """The explicitly configured standalone bundle is missing or invalid."""
 
 
 class PredictionError(ModelServiceError):
@@ -145,6 +144,11 @@ class PredictionService:
 
 
 def _validate_frozen_run(run: Any, config_path: Path) -> CatBoostSettings:
+    from real_estate.ml.final_model import (
+        _feature_contract_sha256,
+        _validate_run_contract,
+    )
+
     settings = load_catboost_settings(config_path)
     if _feature_contract_sha256() != EXPECTED_FEATURE_CONTRACT_SHA256:
         raise ModelUnavailableError("Local feature contract differs from frozen V1.")
@@ -160,23 +164,50 @@ def load_prediction_service(
     settings: ServingSettings | None = None,
     config_path: Path = DEFAULT_ML_CONFIG_PATH,
     *,
-    client_factory: Callable[..., Any] = MlflowClient,
-    model_loader: Callable[[str, str], Any] = _load_model,
+    client_factory: Callable[..., Any] | None = None,
+    model_loader: Callable[[str, str], Any] | None = None,
 ) -> PredictionService:
     """Load one MLflow model and validate every frozen serving invariant."""
     try:
+        import mlflow
+        from mlflow.tracking import MlflowClient
+
+        from real_estate.ml.final_model import _load_model, _validate_loaded_model
+        from real_estate.ml.tracking import load_tracking_settings
+
         runtime = settings or ServingSettings.from_environment()
         tracking = load_tracking_settings(config_path)
         mlflow.set_tracking_uri(runtime.tracking_uri)
-        client = client_factory(tracking_uri=runtime.tracking_uri)
+        factory = client_factory or MlflowClient
+        loader = model_loader or _load_model
+        client = factory(tracking_uri=runtime.tracking_uri)
         run = client.get_run(runtime.run_id)
         model_settings = _validate_frozen_run(run, config_path)
-        model = model_loader(runtime.run_id, tracking.model_artifact_name)
+        model = loader(runtime.run_id, tracking.model_artifact_name)
         _validate_loaded_model(model, model_settings)
     except ModelUnavailableError:
         raise
     except Exception as error:
         raise ModelUnavailableError(
             "Frozen model is unavailable or incompatible."
+        ) from error
+    return PredictionService(model=model)
+
+
+def load_configured_prediction_service(
+    environ: Mapping[str, str] | None = None,
+) -> PredictionService:
+    """Prefer an explicit standalone bundle, else use local MLflow development."""
+    values = os.environ if environ is None else environ
+    configured_bundle = values.get(MODEL_BUNDLE_ENVIRONMENT_VARIABLE)
+    if configured_bundle is None:
+        return load_prediction_service(ServingSettings.from_environment(values))
+    if not configured_bundle.strip():
+        raise BundleModelUnavailableError("Configured model bundle path is empty.")
+    try:
+        model = load_serving_bundle(Path(configured_bundle))
+    except ServingBundleError as error:
+        raise BundleModelUnavailableError(
+            "Configured standalone model bundle is unavailable or invalid."
         ) from error
     return PredictionService(model=model)
