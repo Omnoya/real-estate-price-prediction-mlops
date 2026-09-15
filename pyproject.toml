@@ -10,16 +10,19 @@ readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
     "catboost",
+    "fastapi",
     "mlflow",
     "numpy",
     "pandas",
     "pyarrow",
     "requests",
     "pyyaml",
+    "uvicorn",
 ]
 
 [project.optional-dependencies]
 dev = [
+    "httpx2",
     "pytest",
     "ruff",
 ]

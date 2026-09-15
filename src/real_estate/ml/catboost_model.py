@@ -127,12 +127,12 @@ def load_catboost_settings(path: Path = DEFAULT_ML_CONFIG_PATH) -> CatBoostSetti
         raise ValueError(f"Invalid CatBoost configuration: {error}") from error
 
 
-def prepare_catboost_features(data: MLDataset) -> pd.DataFrame:
-    """Prepare the V1 allowlist without learning any preprocessing statistic."""
-    if tuple(data.features.columns) != FEATURE_COLUMNS:
+def prepare_catboost_feature_frame(features: pd.DataFrame) -> pd.DataFrame:
+    """Prepare one V1 feature frame without learning preprocessing statistics."""
+    if tuple(features.columns) != FEATURE_COLUMNS:
         raise CatBoostContractError("CatBoost input differs from the ML V1 allowlist.")
 
-    prepared = data.features.copy(deep=True)
+    prepared = features.copy(deep=True)
     for column in CATEGORICAL_FEATURES:
         values = prepared[column].astype("string").fillna(MISSING_CATEGORY)
         prepared[column] = values.astype(object)
@@ -144,6 +144,11 @@ def prepare_catboost_features(data: MLDataset) -> pd.DataFrame:
     if tuple(prepared.columns) != FEATURE_COLUMNS:
         raise AssertionError("CatBoost feature preparation changed the allowlist.")
     return prepared
+
+
+def prepare_catboost_features(data: MLDataset) -> pd.DataFrame:
+    """Prepare an ML dataset with the canonical V1 feature-frame transformer."""
+    return prepare_catboost_feature_frame(data.features)
 
 
 def _load_catboost_api() -> tuple[Callable[..., Any], Callable[..., Any]]:
