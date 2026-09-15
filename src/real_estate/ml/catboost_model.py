@@ -71,7 +71,7 @@ class CatBoostSettings:
         expected = (
             "RMSE",
             "RMSE",
-            1000,
+            3000,
             0.05,
             8,
             42,

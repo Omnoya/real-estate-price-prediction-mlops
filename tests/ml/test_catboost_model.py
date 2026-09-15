@@ -22,7 +22,7 @@ if TYPE_CHECKING:
 CATBOOST_CONFIG = {
     "loss_function": "RMSE",
     "eval_metric": "RMSE",
-    "iterations": 1000,
+    "iterations": 3000,
     "learning_rate": 0.05,
     "depth": 8,
     "random_seed": 42,
